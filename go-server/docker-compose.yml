@@ -1,0 +1,24 @@
+version: "3.9"
+
+# Local dev compose for the kiosk Go API. The kiosk SPA has its own
+# docker-compose.yml in CheckInKiosk/. For an integrated device build, use the
+# top-level compose file at the repo root.
+
+services:
+  checkin-kiosk-api:
+    build: .
+    image: checkin-kiosk-api:dev
+    environment:
+      PORT: "8089"
+      MARIADB_DSN: ${MARIADB_DSN}
+      JWT_SECRET: ${KIOSK_JWT_SECRET}
+      DEVICE_API_KEY: ${KIOSK_DEVICE_KEY}
+      DEVICE_ID: ${KIOSK_DEVICE_ID:-kiosk-dev-01}
+      KIOSK_GROUP_ID: ${KIOSK_GROUP_ID}
+      KIOSK_LOOKUP_WINDOW_DAYS: "2"
+      SESSION_TTL_MINUTES: "15"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      ENV: dev
+    ports:
+      - "8089:8089"
+    restart: unless-stopped

@@ -1,0 +1,28 @@
+version: "3.9"
+
+# Single-image deployment: the Go binary serves the admin SPA, the kiosk
+# SPA, the admin REST API, and the kiosk proxy. SQLite data persists in
+# the `data` volume.
+
+services:
+  checkin:
+    build: .
+    image: newmastercheckin:dev
+    environment:
+      PORT: "8089"
+      DATA_PATH: /data/data.db
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8089}
+      UPSTREAM_TIMEOUT_MS: "12000"
+    volumes:
+      - kiosk-data:/data
+    ports:
+      - "8089:8089"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8089/api/kiosk/v1/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  kiosk-data:

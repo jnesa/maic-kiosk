@@ -1,0 +1,33 @@
+node_modules
+dist
+.DS_Store
+*.log
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Build artifacts
+*.tsbuildinfo
+coverage/
+
+# Vite
+.vite/
+
+# Go server build outputs
+go-server/bin/
+go-server/server
+go-server/admin
+go-server/data/
+
+# v1 Go proxy leftover (no longer used; v2 lives in go-server/)
+go-proxy/
+
+# v1 YAML registry (no longer used; v2 stores in SQLite)
+go-server/properties.yaml

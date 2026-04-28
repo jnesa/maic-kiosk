@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: checkin-kiosk-api-config
+  namespace: dev
+data:
+  KIOSK_LOOKUP_WINDOW_DAYS: "2"
+  SESSION_TTL_MINUTES: "15"
+  ENV: "dev"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: checkin-kiosk-api-secrets
+  namespace: dev
+type: Opaque
+stringData:
+  MARIADB_DSN: "kiosk_user:CHANGE_ME@tcp(legacy-db.dev.svc.cluster.local:3306)/maic_legacy?charset=utf8mb4&parseTime=true&loc=Europe%2FRome"
+  JWT_SECRET: "CHANGE_ME_TO_RANDOM_32_BYTES"
+  DEVICE_API_KEY: "CHANGE_ME_TO_RANDOM_32_BYTES"
+  DEVICE_ID: "pareus-kiosk-dev-01"
+  KIOSK_GROUP_ID: "1"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkin-kiosk-api
+  namespace: dev
+  labels:
+    app: checkin-kiosk-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkin-kiosk-api
+  template:
+    metadata:
+      labels:
+        app: checkin-kiosk-api
+    spec:
+      containers:
+        - name: checkin-kiosk-api
+          image: registry.example.com/maic/checkin-kiosk-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8089
+          envFrom:
+            - configMapRef: { name: checkin-kiosk-api-config }
+            - secretRef:    { name: checkin-kiosk-api-secrets }
+          env:
+            - name: PORT
+              value: "8089"
+          livenessProbe:
+            httpGet:  { path: /health, port: 8089 }
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:  { path: /api/v1/ready, port: 8089 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkin-kiosk-api
+  namespace: dev
+spec:
+  type: ClusterIP
+  selector: { app: checkin-kiosk-api }
+  ports:
+    - port: 8089
+      targetPort: 8089

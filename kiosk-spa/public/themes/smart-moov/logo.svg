@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+  <!--
+    smart moov mark — single bold red wave drawn as a continuous bezier path,
+    matching the facade signage. Pure SVG, single colour, scales cleanly.
+  -->
+  <path
+    d="M8 18 C 18 6, 26 30, 36 18 S 56 30, 56 18"
+    stroke="#E0233A"
+    stroke-width="6"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <path
+    d="M8 32 C 18 20, 26 44, 36 32 S 56 44, 56 32"
+    stroke="#E0233A"
+    stroke-width="6"
+    stroke-linecap="round"
+    fill="none"
+    opacity="0.9"
+  />
+  <path
+    d="M8 46 C 18 34, 26 58, 36 46 S 56 58, 56 46"
+    stroke="#E0233A"
+    stroke-width="6"
+    stroke-linecap="round"
+    fill="none"
+    opacity="0.75"
+  />
+</svg>
