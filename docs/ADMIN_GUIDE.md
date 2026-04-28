@@ -1,4 +1,4 @@
-# Admin Guide — newMasterCheckin
+# Admin Guide — MAIC Kiosk
 
 Operator-facing runbook. Covers signing into the admin panel, registering
 hotels, creating kiosk URLs, and the few maintenance actions you'll do

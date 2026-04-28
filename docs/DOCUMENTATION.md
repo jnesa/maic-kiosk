@@ -1,4 +1,4 @@
-# newMasterCheckin — Documentation & Review Pack
+# MAIC Kiosk — v1 Documentation & Review Pack (historical)
 
 A reviewer-oriented walkthrough of the multi-tenant self check-in kiosk.
 Reads top-to-bottom for context; the **Review Checklist** at the end is
@@ -178,7 +178,7 @@ handler or proxy changes needed.
 ├── vite.config.ts
 ├── Dockerfile                   — node build → nginx (SPA only)
 ├── nginx.conf.template          — SPA fallback + /api proxy
-├── docker-compose.yml           — pair: SPA + go-proxy
+├── docker-compose.yml           — pair: SPA + go-server
 ├── public/
 │   ├── locales/{en,de,it,fr}/   — i18n bundles
 │   └── themes/{smart-moov,pareus}/  — drop hero.jpg + logo.svg
@@ -223,7 +223,7 @@ handler or proxy changes needed.
 │   ├── router/index.tsx         — buildRouter(basename)
 │   ├── main.tsx                 — boot
 │   └── index.css                — Tailwind + theme tokens
-├── go-proxy/                    — Go multi-tenant proxy (sibling)
+├── go-server/                    — Go multi-tenant proxy (sibling)
 │   ├── cmd/main.go
 │   ├── internal/
 │   │   ├── config/config.go     — loads + validates properties.yaml
@@ -245,7 +245,7 @@ handler or proxy changes needed.
 
 ## Property registry & onboarding
 
-`go-proxy/properties.yaml` is the single source of truth for which
+`go-server/properties.yaml` is the single source of truth for which
 properties this kiosk serves.
 
 ```yaml
@@ -283,7 +283,7 @@ properties:
    - `KIOSK_GROUP_ID=<the property's g_group.id>`
    - `KIOSK_LOOKUP_WINDOW_DAYS=2` (optional)
    - `KIOSK_DEVICE_ID=lobby-kiosk-01` (optional, audit-only label)
-3. **Add a registry entry** to `go-proxy/properties.yaml` referencing a
+3. **Add a registry entry** to `go-server/properties.yaml` referencing a
    new env var for the same secret (e.g. `${ACME_DEVICE_KEY}`).
 4. **Set the matching env** on the kiosk service (compose / k8s
    secret).
@@ -553,7 +553,7 @@ The legacy controller's `getDefaultConfig()` is mirrored in
 ### docker-compose (root of repo)
 
 ```bash
-cp go-proxy/properties.example.yaml go-proxy/properties.yaml
+cp go-server/properties.example.yaml go-server/properties.yaml
 # Edit properties.yaml to point at real PMSApi backends.
 
 # Set the per-property device keys
@@ -567,7 +567,7 @@ docker compose up --build
 
 ### Kubernetes (sketch)
 
-`go-proxy/k8s/deployment-dev.yaml` is a minimal Deployment + Service
+`go-server/k8s/deployment-dev.yaml` is a minimal Deployment + Service
 manifest. Production needs:
 
 - ConfigMap for `properties.yaml`.
@@ -648,7 +648,7 @@ npm run build              # Vite production build
 npx tsc --noEmit           # strict type-check
 
 # Go proxy
-cd go-proxy
+cd go-server
 go build ./...
 go vet ./...
 ```
@@ -696,12 +696,12 @@ the file/area to inspect.
 
 ### Code-level
 
-- [ ] **Property registry validation** — `go-proxy/internal/config/config.go`
+- [ ] **Property registry validation** — `go-server/internal/config/config.go`
   - Does the slug regex match what the SPA puts in URLs? (`slugRe`)
   - Are duplicate slugs rejected? (`Load()`)
   - Does `${VAR}` interpolation refuse to start when an env var is
     missing? (`expandEnvVars` + `validate`)
-- [ ] **Proxy allowlist** — `go-proxy/internal/proxy/proxy.go`
+- [ ] **Proxy allowlist** — `go-server/internal/proxy/proxy.go`
   - Is `Allowed` exactly the six legacy paths, no more?
   - Are inbound headers stripped except for the small allowlist
     (`Content-Type`, `Accept-Language`, `X-Lookup-Method`,

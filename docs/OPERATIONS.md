@@ -1,4 +1,4 @@
-# Operations — newMasterCheckin
+# Operations — MAIC Kiosk
 
 Sysadmin / SRE runbook. Covers deploy, backup, restore, monitoring, and
 disaster recovery.
@@ -25,7 +25,35 @@ property side is unchanged: each property's PMSApi runs the
 
 ---
 
-## Deploy (docker compose)
+## Deploy options
+
+There are two supported ways to run the kiosk; pick whichever matches
+how the rest of MAIC is deployed in your environment.
+
+### A. Via the MAIC Orchestrator (recommended)
+
+The kiosk is wired into `MaicSystem/maic-orchestration` as the `kiosk`
+service. Bring it up alongside everything else:
+
+```bash
+# Once: clone the kiosk repo into the orchestrator's sibling tree
+cd MaicHorizon
+git clone git@github.com:MaicSystem/maic-kiosk.git Kiosk
+
+cd Orchestration
+docker compose up -d kiosk           # builds from ../Kiosk
+docker compose exec kiosk /app/admin add-user \
+  --email you@maiccube.com --name "Your Name"
+```
+
+Use this when MAIC services run on one host and you want the kiosk on
+the same control plane (logs, healthchecks, restarts, the works).
+
+### B. Standalone docker compose
+
+Works on its own host when only the kiosk needs to live there (e.g. a
+public edge box that talks to property PMSApi instances over the public
+internet):
 
 ```bash
 git pull

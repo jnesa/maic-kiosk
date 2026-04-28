@@ -1,4 +1,4 @@
-# Service Design — newMasterCheckin (v2, admin-managed)
+# Service Design — MAIC Kiosk (v2, admin-managed)
 
 How the kiosk works after the v2 admin-panel changes land. This doc is
 the source of truth for behaviour, contracts, and operational

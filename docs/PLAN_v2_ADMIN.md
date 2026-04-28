@@ -1,4 +1,4 @@
-# Plan — Admin-managed multi-tenant kiosk (v2)
+# Plan — Admin-managed multi-tenant kiosk (v2, historical)
 
 ## Goal
 
@@ -183,7 +183,7 @@ session cookie.
 No self-signup. New operators are added via a CLI tool:
 
 ```bash
-go-proxy admin add-user --email ilija@maiccube.com --name "Ilija Evic"
+go-server admin add-user --email ilija@maiccube.com --name "Ilija Evic"
 # Prompts for password, bcrypts it, inserts into admin_users.
 ```
 
@@ -279,7 +279,7 @@ automated without legacy admin API access).
 
 ```
 .
-├── go-server/                     ← renamed from go-proxy (it's now more)
+├── go-server/                     ← renamed from go-server (it's now more)
 │   ├── cmd/
 │   │   ├── server/main.go         — HTTP server + boot
 │   │   └── admin/main.go          — CLI: add-user, list-users, reset-password
@@ -329,7 +329,7 @@ automated without legacy admin API access).
     └── ADMIN_GUIDE.md             — operator-facing future-state runbook
 ```
 
-Two top-level renames (`go-proxy` → `go-server`, `src/` → `kiosk-spa/`)
+Two top-level renames (`go-server` → `go-server`, `src/` → `kiosk-spa/`)
 are cosmetic but match the "this is more than a proxy now" reality.
 Done in the same commit so history stays clean.
 
@@ -426,7 +426,7 @@ Two new docs alongside `DOCUMENTATION.md`:
 
 ## Migration from the current YAML setup
 
-- Operators currently using `go-proxy/properties.yaml` keep it for one
+- Operators currently using `go-server/properties.yaml` keep it for one
   release. On first boot, if `data.db` doesn't exist and
   `properties.yaml` does, the server imports each entry into `hotels`
   + `kiosks` (one kiosk per YAML entry, slug becomes `display_name`,
