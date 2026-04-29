@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 // DB is still used by the wrapping transaction in submit().
 
 /**
@@ -104,6 +105,14 @@ class KioskController extends Controller
             }
         }
 
+        // The new Postgres orchestrator schema dropped the legacy
+        // `room_reservation.prestay` flag. Completion is now derived from
+        // `prestay_history`: a row with status=2 (visited) means the guest
+        // already finished the prestay/check-in flow.
+        $prestayDone = PrestayHistory::where('id_reservation', (int) $r->id)
+            ->where('status', 2)
+            ->exists();
+
         return [
             'id'           => (int) $r->id,
             'code'         => (string) ($r->reservation_id ?? ''),
@@ -115,7 +124,7 @@ class KioskController extends Controller
             'children'     => (int) ($r->children ?? 0),
             'roomName'     => $roomName,
             'groupId'      => $groupId,
-            'prestayDone'  => ((int) ($r->prestay ?? 0)) === 1,
+            'prestayDone'  => $prestayDone,
         ];
     }
 
@@ -152,8 +161,7 @@ class KioskController extends Controller
                 'room_reservation.arrival',
                 'room_reservation.departure',
                 'room_reservation.adults',
-                'room_reservation.children',
-                'room_reservation.prestay'
+                'room_reservation.children'
             )
             ->leftJoin('room_reservation_room', 'room_reservation_room.reservation_id', '=', 'room_reservation.id')
             ->leftJoin('rooms', 'rooms.id', '=', 'room_reservation_room.room_id')
@@ -180,11 +188,15 @@ class KioskController extends Controller
         if ($arrivalDate !== '') {
             $base = $base->whereDate('room_reservation.arrival', $arrivalDate);
         } else {
+            // Window expressed as concrete dates so the SQL stays portable
+            // across MariaDB (legacy) and Postgres (new orchestrator). PHP
+            // computes the bounds; the DB just sees ISO date strings.
             $win = $this->lookupWindow();
-            $base = $base->whereRaw(
-                'room_reservation.arrival BETWEEN DATE_SUB(CURDATE(), INTERVAL ? DAY) AND DATE_ADD(CURDATE(), INTERVAL ? DAY)',
-                [$win, $win]
-            );
+            $now = now();
+            $base = $base->whereBetween('room_reservation.arrival', [
+                $now->copy()->subDays($win)->toDateString(),
+                $now->copy()->addDays($win)->toDateString(),
+            ]);
         }
 
         $hits = $base->orderBy('room_reservation.arrival')->limit(25)->get();
@@ -442,8 +454,11 @@ class KioskController extends Controller
      * No new tables — we reuse the existing legacy schema:
      *   - guest data was already saved in /save-guest (room_reservation_guest)
      *   - firm + signature was already saved in /save-firm (room_reservation_firm)
-     * This endpoint just writes a `prestay_history` audit row (type='kiosk')
-     * and flips `room_reservation.prestay = 1` in one transaction.
+     * This endpoint writes a `prestay_history` audit row (type='kiosk',
+     * status=2) which is the new orchestrator's source of truth for
+     * "prestay/check-in complete" — the legacy `room_reservation.prestay`
+     * column was dropped. We also set `check_in` so downstream consumers
+     * (Feratel pickup, dashboards) see the timestamp.
      */
     public function submit(Request $request): JsonResponse
     {
@@ -469,7 +484,13 @@ class KioskController extends Controller
                     'visited_at'     => now(),
                 ]);
 
-                $r->prestay = 1;
+                // The legacy `prestay` flag is gone; the prestay_history row
+                // above is the new completion signal. Stamp `check_in` so
+                // any downstream pipeline that watches that timestamp picks
+                // the kiosk submission up.
+                if (Schema::hasColumn('room_reservation', 'check_in')) {
+                    $r->check_in = now();
+                }
                 $r->save();
             });
         } catch (\Throwable $e) {

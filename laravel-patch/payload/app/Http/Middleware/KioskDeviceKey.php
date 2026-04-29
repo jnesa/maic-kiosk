@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Authenticates a kiosk device using a shared secret in `X-Device-Key`.
@@ -12,10 +13,10 @@ use Illuminate\Http\Request;
  * a constant-time compare so that timing attacks can't be used to brute-force
  * the secret one byte at a time.
  *
- * Intentionally tenant-agnostic: kiosks are pinned to a single property via
- * env `KIOSK_GROUP_ID` on the kiosk side (and we re-check that in the
- * controller), so this middleware doesn't need access to the broken
- * `tenant(...)` helper that the legacy /api/login flow depends on.
+ * After authentication we pin the request to KIOSK_GROUP_ID by hooking into
+ * the TenantContext service. That sets the Postgres `app.tenant_id` session
+ * variable so RLS policies allow the kiosk to read its own tenant's rows.
+ * Without this step every kiosk query would return zero rows under RLS.
  */
 class KioskDeviceKey
 {
@@ -31,6 +32,21 @@ class KioskDeviceKey
                     'message' => 'Invalid kiosk device key',
                 ],
             ], 401);
+        }
+
+        // Set Postgres RLS context. Prefer the explicit KIOSK_TENANT_ID env
+        // because `shared.g_group` itself has RLS — looking up tenant_id
+        // there requires already having a tenant set, which is the
+        // chicken-and-egg we are trying to escape. The kiosk is pinned to
+        // a single property, so the operator is expected to declare both
+        // KIOSK_GROUP_ID and KIOSK_TENANT_ID.
+        $kioskTenantId = (int) env('KIOSK_TENANT_ID', 0);
+        if ($kioskTenantId > 0) {
+            try {
+                DB::statement("SET app.tenant_id = '{$kioskTenantId}'");
+            } catch (\Throwable $e) {
+                \Log::warning('KIOSK tenant init failed: ' . $e->getMessage());
+            }
         }
 
         return $next($request);

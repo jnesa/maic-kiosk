@@ -1,11 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Camera01 } from '@untitledui/icons';
 import { Field } from '@/components/Field';
+import { MrzScanner } from '@/components/MrzScanner';
+import { ExternalScannerModal } from '@/components/ExternalScannerModal';
 import { useForm, isVisible, isRequired } from '@/store/form';
 import { useSession } from '@/store/session';
 import { saveGuest } from '@/api/checkin';
+import { mapMrzToGuest } from '@/lib/mrz';
 import type { GuestData } from '@/api/types';
+
+type ScannerTarget = { idx: number; mode: 'camera' | 'external' } | null;
 
 const documentOptions = [
   { value: 1, key: 'field.document.passport' },
@@ -24,6 +30,9 @@ export const Step1GuestPage = () => {
   const cfg = payload?.config;
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<number, Record<string, string>>>({});
+  // Active scanner: which guest, and which mode (camera or desk scanner).
+  // null when no modal is open.
+  const [scanner, setScanner] = useState<ScannerTarget>(null);
 
   const adults = reservation?.adults ?? 1;
   if (guests.length < adults) ensureGuestSlots(adults);
@@ -87,9 +96,47 @@ export const Step1GuestPage = () => {
         const ge = errors[i] ?? {};
         return (
           <section key={i} className="kiosk-card">
-            <h2 className="display text-2xl font-semibold text-ink">
-              {isPrimary ? t('step.guest') : `${t('step.guest')} · ${i + 1}`}
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="display text-2xl font-semibold text-ink">
+                {isPrimary ? t('step.guest') : `${t('step.guest')} · ${i + 1}`}
+              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setScanner({ idx: i, mode: 'camera' })}
+                  className="kiosk-btn-secondary inline-flex items-center gap-2"
+                  aria-label={t('scanner.button')}
+                >
+                  <Camera01 className="h-5 w-5" />
+                  {t('scanner.button')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScanner({ idx: i, mode: 'external' })}
+                  className="kiosk-btn-secondary inline-flex items-center gap-2"
+                  aria-label={t('external_scanner.button')}
+                >
+                  {/* Inline flatbed-scanner glyph — keeps us off the
+                      icon-naming guess for @untitledui/icons. */}
+                  <svg
+                    aria-hidden="true"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="6" width="18" height="12" rx="2" />
+                    <path d="M3 12h18" />
+                    <path d="M7 18v2M17 18v2" />
+                  </svg>
+                  {t('external_scanner.button')}
+                </button>
+              </div>
+            </div>
             <div className="mt-6 grid grid-cols-1 gap-5 tablet:grid-cols-2 desk:grid-cols-3">
               {isVisible(cfg, 'f_name') && (
                 <Field label={t('field.fname')} required={isRequired(cfg, 'f_name', isPrimary)} error={ge.f_name && t('common.required')}>
@@ -190,6 +237,22 @@ export const Step1GuestPage = () => {
           <span aria-hidden>→</span>
         </button>
       </div>
+      <MrzScanner
+        open={scanner?.mode === 'camera'}
+        onClose={() => setScanner(null)}
+        onParsed={(fields) => {
+          if (scanner) patchGuest(scanner.idx, mapMrzToGuest(fields));
+          setScanner(null);
+        }}
+      />
+      <ExternalScannerModal
+        open={scanner?.mode === 'external'}
+        onClose={() => setScanner(null)}
+        onParsed={(fields) => {
+          if (scanner) patchGuest(scanner.idx, mapMrzToGuest(fields));
+          setScanner(null);
+        }}
+      />
     </div>
   );
 };

@@ -151,4 +151,41 @@ body {
   .kiosk-tile:focus-visible {
     box-shadow: 0 0 0 4px var(--kt-brand-soft);
   }
+
+  /* External-scanner illustrations.
+   * `.kiosk-anim-bob`  — passport hovers above the scanner bed (1.6s cycle)
+   * `.kiosk-anim-sweep`— scan-line sweeps across the bed (2.4s cycle)
+   * `.kiosk-pulse-dot` — soft pulse on the "Waiting for scan" chip
+   * The pen-write animation runs entirely in SVG via SMIL; no CSS keyframes
+   * needed for it. */
+  .kiosk-anim-bob {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: kiosk-bob 1.6s ease-in-out infinite;
+  }
+  .kiosk-anim-sweep {
+    animation: kiosk-sweep 2.4s ease-in-out infinite;
+  }
+  .kiosk-pulse-dot {
+    animation: kiosk-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes kiosk-bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+  }
+  @keyframes kiosk-sweep {
+    0%   { transform: translateY(0); opacity: 0.0; }
+    15%  { opacity: 1; }
+    50%  { transform: translateY(38px); opacity: 1; }
+    85%  { opacity: 1; }
+    100% { transform: translateY(0); opacity: 0.0; }
+  }
+  @keyframes kiosk-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 var(--kt-brand-soft); }
+    50%      { box-shadow: 0 0 0 8px transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .kiosk-anim-bob, .kiosk-anim-sweep, .kiosk-pulse-dot { animation: none; }
+  }
 }
