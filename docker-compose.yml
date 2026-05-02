@@ -1,20 +1,23 @@
 version: "3.9"
 
-# Single-image deployment: the Go binary serves the admin SPA, the kiosk
-# SPA, the admin REST API, and the kiosk proxy. SQLite data persists in
-# the `data` volume.
+# Single-image deployment: the Go binary serves the admin SPA + the
+# kiosk SPA + the kiosk-side REST surface. **Stateless** — no SQLite,
+# no volume; every operation is forwarded to the legacy MAIC PHP
+# monolith at LEGACY_BASE_URL.
 
 services:
   checkin:
     build: .
-    image: newmastercheckin:dev
+    image: maic-kiosk:dev
     environment:
       PORT: "8089"
-      DATA_PATH: /data/data.db
+      LEGACY_BASE_URL: ${LEGACY_BASE_URL:-https://dev.maiccube.com}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8089}
-      UPSTREAM_TIMEOUT_MS: "12000"
-    volumes:
-      - kiosk-data:/data
+      UPSTREAM_TIMEOUT_MS: "15000"
+      # Set to a stable 32+ char random value in production. If unset
+      # the binary generates a process-local secret on boot, which is
+      # fine for dev but invalidates all sessions on restart.
+      KIOSK_SESSION_SECRET: ${KIOSK_SESSION_SECRET:-}
     ports:
       - "8089:8089"
     restart: unless-stopped
@@ -23,6 +26,3 @@ services:
       interval: 30s
       timeout: 3s
       retries: 3
-
-volumes:
-  kiosk-data:

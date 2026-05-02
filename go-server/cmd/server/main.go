@@ -1,11 +1,12 @@
-// Command server is the single binary that hosts the admin panel, the
-// kiosk SPA, the admin REST API, and the kiosk proxy. It also serves
-// both built SPA bundles via http.FileServer with SPA-aware fallback,
-// so we don't need nginx in front of it.
+// Command server is the kiosk Go binary. It is a stateless HTTP shim:
+// chi router + cookie middleware + two static SPA bundles + the
+// legacymaichttp adapter. No SQLite, no DB driver, no internal store.
 package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"log"
 	"net/http"
@@ -21,51 +22,52 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/maic/checkin-kiosk-api/internal/adapters/legacymaichttp"
 	"github.com/maic/checkin-kiosk-api/internal/admin"
-	"github.com/maic/checkin-kiosk-api/internal/auth"
 	"github.com/maic/checkin-kiosk-api/internal/kiosk"
-	"github.com/maic/checkin-kiosk-api/internal/proxy"
-	"github.com/maic/checkin-kiosk-api/internal/store"
+	"github.com/maic/checkin-kiosk-api/internal/session"
 )
 
 // settings is the (small) runtime configuration. Everything is env-driven.
 type settings struct {
 	port              string
-	dataPath          string
+	legacyBaseURL     string
 	upstreamTimeoutMs int
 	allowedOrigins    []string
-	adminSPADir       string // path to the built admin SPA assets
-	kioskSPADir       string // path to the built kiosk SPA assets
+	adminSPADir       string
+	kioskSPADir       string
+	sessionSecret     string
 }
 
 func loadSettings() settings {
 	return settings{
 		port:              getenv("PORT", "8089"),
-		dataPath:          getenv("DATA_PATH", "data/data.db"),
-		upstreamTimeoutMs: getenvInt("UPSTREAM_TIMEOUT_MS", 12000),
+		legacyBaseURL:     getenv("LEGACY_BASE_URL", "https://dev.maiccube.com"),
+		upstreamTimeoutMs: getenvInt("UPSTREAM_TIMEOUT_MS", 15000),
 		allowedOrigins:    splitCSV(getenv("ALLOWED_ORIGINS", "")),
 		adminSPADir:       getenv("ADMIN_SPA_DIR", "admin-spa-dist"),
 		kioskSPADir:       getenv("KIOSK_SPA_DIR", "kiosk-spa-dist"),
+		sessionSecret:     getenv("KIOSK_SESSION_SECRET", ""),
 	}
 }
 
 func main() {
 	s := loadSettings()
 
-	if dir := filepath.Dir(s.dataPath); dir != "" {
-		_ = os.MkdirAll(dir, 0o755)
+	if s.sessionSecret == "" {
+		s.sessionSecret = randomSecret()
+		log.Printf("KIOSK_SESSION_SECRET not set — generated a random one for this process. " +
+			"All operator sessions will be invalidated on restart. Set the env in production.")
 	}
 
-	st, err := store.Open(s.dataPath)
-	if err != nil {
-		log.Fatalf("store.Open: %v", err)
-	}
-	defer st.Close()
-	log.Printf("opened SQLite at %s", s.dataPath)
+	// One adapter (legacymaichttp) implements every port the
+	// handlers depend on. Future phases swap this for a different
+	// adapter without touching the handlers.
+	upstream := legacymaichttp.New(s.legacyBaseURL, time.Duration(s.upstreamTimeoutMs)*time.Millisecond)
 
-	pr := proxy.New(time.Duration(s.upstreamTimeoutMs) * time.Millisecond)
-	adminH := admin.New(st)
-	kioskH := kiosk.New(st, pr)
+	sm := session.NewManager(s.sessionSecret)
+	adminH := admin.New(upstream, upstream, sm)
+	kioskH := kiosk.New(upstream, upstream, upstream)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -81,18 +83,17 @@ func main() {
 		MaxAge:           300,
 	}))
 
-	// Auth middleware runs once for every request, but only `/api/admin/*`
-	// routes actually require a user; the kiosk path is unauthenticated.
-	r.Use(auth.Middleware(st))
+	// Cookie-based session middleware runs on every request; only
+	// admin routes wrap RequireOperator on top.
+	r.Use(sm.Middleware)
 
 	r.Route("/api/admin/v1", adminH.Mount)
 	r.Route("/api/kiosk/v1", kioskH.Mount)
 
-	// Admin SPA (priority): `/admin/*` always served by the admin bundle.
+	// Admin SPA at /admin/*; kiosk SPA at everything else
+	// (including /k_<uuid>/...). Both fall through to index.html
+	// for SPA-side routing.
 	mountSPA(r, "/admin", s.adminSPADir)
-
-	// Kiosk SPA: any other URL — including `/k_<uuid>/...` — falls through
-	// to the kiosk bundle's index.html (router reads slug from window.location.pathname).
 	mountSPA(r, "/", s.kioskSPADir)
 
 	srv := &http.Server{
@@ -105,7 +106,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("checkin-kiosk-api listening on :%s", s.port)
+		log.Printf("checkin-kiosk-api listening on :%s — legacy upstream: %s", s.port, s.legacyBaseURL)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("listen: %v", err)
 		}
@@ -121,8 +122,8 @@ func main() {
 }
 
 // mountSPA serves built SPA assets under `prefix` with SPA-aware
-// fallback: any path that doesn't resolve to a real file falls back to
-// the bundle's index.html so the client-side router can take over.
+// fallback: any path that doesn't resolve to a real file falls back
+// to the bundle's index.html so the client-side router takes over.
 func mountSPA(r chi.Router, prefix, dir string) {
 	if dir == "" {
 		log.Printf("SPA dir for %s not set; skipping", prefix)
@@ -135,7 +136,6 @@ func mountSPA(r chi.Router, prefix, dir string) {
 	fs := http.FileServer(http.Dir(dir))
 	indexPath := filepath.Join(dir, "index.html")
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// `path` is the slice of the URL inside the prefix.
 		path := strings.TrimPrefix(req.URL.Path, prefix)
 		if path == "" {
 			path = "/"
@@ -189,12 +189,23 @@ func splitCSV(s string) []string {
 	return out
 }
 
-// originsOrSelf turns an empty allowlist into an explicit deny so the
-// CORS layer doesn't accidentally accept everything when an operator
-// forgets to set it.
+// originsOrSelf turns an empty allowlist into an explicit deny so
+// the CORS layer doesn't accidentally accept everything when an
+// operator forgets to set it.
 func originsOrSelf(in []string) []string {
 	if len(in) == 0 {
 		return []string{"https://localhost"}
 	}
 	return in
+}
+
+// randomSecret generates a 32-byte secret (base64) for the cookie
+// signer when KIOSK_SESSION_SECRET is unset. Process-local; restarts
+// invalidate cookies.
+func randomSecret() string {
+	var buf [32]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		log.Fatalf("rand.Read: %v", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(buf[:])
 }
